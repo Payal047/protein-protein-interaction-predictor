@@ -1,0 +1,6 @@
+biopython
+joblib
+numpy
+pandas
+scikit-learn==1.9.1
+streamlit
