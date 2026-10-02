@@ -15,6 +15,10 @@ Thumbs.db
 21591618/
 notebooks/
 data/
+src/data_preprocessing.py
+src/evaluate_experiment3.py
+src/train_model.py
+src/__init__.py
 
 # Keep only the deployed logistic-regression model; do not track the large random-forest artifact
 models/*.joblib
