@@ -1,10 +1,24 @@
-from pathlib import Path
+import logging
+import time
 
 import streamlit as st
 
+from src.feature_extraction import MAX_SEQUENCE_LENGTH
 from src.predict import predict_interaction, validate_sequence
 
-MODEL_PATH = Path(__file__).resolve().parent / "models" / "logistic_regression_exp3.joblib"
+MAX_CHAT_MESSAGE_LENGTH = MAX_SEQUENCE_LENGTH
+MAX_CHAT_HISTORY_MESSAGES = 20
+PREDICTION_WINDOW_SECONDS = 60
+MAX_PREDICTIONS_PER_WINDOW = 5
+CHAT_CONTEXT_TTL_SECONDS = 600
+LOGGER = logging.getLogger(__name__)
+WELCOME_MESSAGE = {
+    "role": "assistant",
+    "content": (
+        "Welcome to the PPI Research Assistant. Ask about protein-protein "
+        "interaction, this project, the dataset, the features, or start a prediction."
+    ),
+}
 
 
 st.set_page_config(page_title="PPI Predictor", page_icon="🧬")
@@ -16,23 +30,64 @@ def reset_chat_context() -> None:
         "protein_a": None,
         "protein_b": None,
         "step": "idle",
+        "started_at": None,
     }
+
+
+def start_prediction_flow() -> None:
+    reset_chat_context()
+    st.session_state.chat_context["step"] = "waiting_for_protein_a"
+    st.session_state.chat_context["started_at"] = time.monotonic()
 
 
 def initialize_chat_state() -> None:
     """Create the chat memory structure once per browser session."""
     if "messages" not in st.session_state:
-        st.session_state.messages = [
-            {
-                "role": "assistant",
-                "content": (
-                    "Welcome to the PPI Research Assistant. Ask about protein-protein "
-                    "interaction, this project, the dataset, the features, or start a prediction."
-                ),
-            }
-        ]
+        st.session_state.messages = [WELCOME_MESSAGE.copy()]
     if "chat_context" not in st.session_state:
         reset_chat_context()
+    st.session_state.setdefault("prediction_timestamps", [])
+
+
+def append_chat_message(role: str, content: str) -> None:
+    st.session_state.messages.append({"role": role, "content": content})
+    st.session_state.messages = st.session_state.messages[
+        -MAX_CHAT_HISTORY_MESSAGES:
+    ]
+
+
+def safe_history_content(message: str, context_step: str) -> str:
+    if context_step == "waiting_for_protein_a":
+        return "[Protein A sequence redacted]"
+    if context_step == "waiting_for_protein_b":
+        return "[Protein B sequence redacted]"
+    try:
+        validate_sequence(message, "Input")
+    except ValueError:
+        return message
+    if len(message.strip()) >= 8:
+        return "[Protein-like input redacted]"
+    return message
+
+
+def allow_prediction() -> bool:
+    now = time.monotonic()
+    recent_timestamps = [
+        timestamp
+        for timestamp in st.session_state.prediction_timestamps
+        if now - timestamp < PREDICTION_WINDOW_SECONDS
+    ]
+    st.session_state.prediction_timestamps = recent_timestamps
+    if len(recent_timestamps) >= MAX_PREDICTIONS_PER_WINDOW:
+        return False
+    recent_timestamps.append(now)
+    st.session_state.prediction_timestamps = recent_timestamps
+    return True
+
+
+def clear_prediction_inputs() -> None:
+    st.session_state["protein_a_input"] = ""
+    st.session_state["protein_b_input"] = ""
 
 
 def knowledge_response(message: str) -> str:
@@ -141,9 +196,7 @@ def knowledge_response(message: str) -> str:
     if query in {"hello", "hi", "hey"}:
         return "Hello. I can help answer questions about PPI, the project, the model, or guide a protein interaction prediction."
     if "predict protein interaction" in query or "i want to predict" in query:
-        st.session_state.chat_context["step"] = "waiting_for_protein_a"
-        st.session_state.chat_context["protein_a"] = None
-        st.session_state.chat_context["protein_b"] = None
+        start_prediction_flow()
         return "Sure. Please provide Protein A sequence."
     return (
         "I can help with general PPI questions, the project workflow, the dataset, feature extraction, model concepts, "
@@ -153,7 +206,23 @@ def knowledge_response(message: str) -> str:
 
 def generate_chat_response(message: str) -> str:
     """Route a user message through the knowledge base or guided prediction flow."""
+    if not isinstance(message, str):
+        return "Please enter a text message."
+    if len(message) > MAX_CHAT_MESSAGE_LENGTH:
+        return f"Messages must not exceed {MAX_CHAT_MESSAGE_LENGTH:,} characters."
+
     context = st.session_state.chat_context
+    started_at = context.get("started_at")
+    if (
+        context["step"] != "idle"
+        and (
+            started_at is None
+            or time.monotonic() - started_at > CHAT_CONTEXT_TTL_SECONDS
+        )
+    ):
+        reset_chat_context()
+        return "That prediction session expired. Start a new prediction to continue."
+
     query = message.strip()
     lowered = query.lower()
 
@@ -182,8 +251,11 @@ def generate_chat_response(message: str) -> str:
             if protein_a is None or protein_b is None:
                 reset_chat_context()
                 return "I am missing one of the sequences. Please provide both sequences again."
+            if not allow_prediction():
+                reset_chat_context()
+                return "Prediction limit reached. Please wait before trying again."
             try:
-                prediction, probability = predict_interaction(protein_a, protein_b, MODEL_PATH)
+                prediction, probability = predict_interaction(protein_a, protein_b)
                 label = "YES" if prediction == 1 else "NO"
                 reset_chat_context()
                 return (
@@ -195,14 +267,16 @@ def generate_chat_response(message: str) -> str:
             except ValueError as error:
                 reset_chat_context()
                 return str(error)
+            except Exception:
+                LOGGER.error("Chat prediction failed.")
+                reset_chat_context()
+                return "Prediction could not be completed. Please try again later."
         if lowered in {"no", "cancel", "stop"}:
             reset_chat_context()
             return "Okay. I am ready when you want to predict a new protein pair."
 
     if "predict protein interaction" in lowered or "i want to predict" in lowered:
-        context["step"] = "waiting_for_protein_a"
-        context["protein_a"] = None
-        context["protein_b"] = None
+        start_prediction_flow()
         return "Sure. Please provide Protein A sequence."
 
     return knowledge_response(message)
@@ -216,22 +290,51 @@ def main() -> None:
     st.caption("Computational prediction only — biological validation is still required.")
 
     st.markdown("### PPI Prediction System")
-    protein_a = st.text_input("Protein A sequence", placeholder="e.g. MKT...")
-    protein_b = st.text_input("Protein B sequence", placeholder="e.g. GQY...")
+    if st.session_state.pop("clear_prediction_inputs", False):
+        st.session_state["protein_a_input"] = ""
+        st.session_state["protein_b_input"] = ""
+    protein_a = st.text_input(
+        "Protein A sequence",
+        placeholder="e.g. MKT...",
+        max_chars=MAX_SEQUENCE_LENGTH,
+        key="protein_a_input",
+    )
+    protein_b = st.text_input(
+        "Protein B sequence",
+        placeholder="e.g. GQY...",
+        max_chars=MAX_SEQUENCE_LENGTH,
+        key="protein_b_input",
+    )
 
     if st.button("Predict interaction"):
+        st.session_state.pop("last_prediction", None)
         try:
             clean_a = validate_sequence(protein_a, "Protein A")
             clean_b = validate_sequence(protein_b, "Protein B")
-            prediction, probability = predict_interaction(clean_a, clean_b, MODEL_PATH)
-            label = "YES" if prediction == 1 else "NO"
-
-            st.subheader("Prediction result")
-            st.metric("Predicted interaction", label)
-            st.metric("Probability", f"{probability * 100:.2f}%")
-            st.warning("This result is a computational prediction and does not prove a biological interaction.")
+            if not allow_prediction():
+                st.error("Prediction limit reached. Please wait before trying again.")
+            else:
+                prediction, probability = predict_interaction(clean_a, clean_b)
+                st.session_state.last_prediction = (
+                    "YES" if prediction == 1 else "NO",
+                    probability,
+                )
+                st.session_state.clear_prediction_inputs = True
+                st.rerun()
         except ValueError as error:
             st.error(f"Input error: {error}")
+        except Exception:
+            LOGGER.error("Form prediction failed.")
+            st.error("Prediction could not be completed. Please try again later.")
+
+    if "last_prediction" in st.session_state:
+        label, probability = st.session_state.last_prediction
+        st.subheader("Prediction result")
+        st.metric("Predicted interaction", label)
+        st.metric("Probability", f"{probability * 100:.2f}%")
+        st.warning("This result is a computational prediction and does not prove a biological interaction.")
+
+    st.button("Clear sequence inputs", on_click=clear_prediction_inputs)
 
     st.markdown("---")
     st.markdown("### PPI Research Assistant")
@@ -239,16 +342,28 @@ def main() -> None:
         "Ask questions about protein-protein interactions, this project, machine learning methods, or use the assistant to guide a PPI prediction."
     )
 
+    if st.button("Clear chat history"):
+        reset_chat_context()
+        st.session_state.messages = [WELCOME_MESSAGE.copy()]
+        st.rerun()
+
     for message in st.session_state.messages:
         with st.chat_message(message["role"]):
             st.markdown(message["content"])
 
-    prompt = st.chat_input("Type your question or provide a protein sequence...")
+    prompt = st.chat_input(
+        "Type your question or provide a protein sequence...",
+        max_chars=MAX_CHAT_MESSAGE_LENGTH,
+    )
     if prompt:
-        st.session_state.messages.append({"role": "user", "content": prompt})
-        assistant_reply = generate_chat_response(prompt)
-        st.session_state.messages.append({"role": "assistant", "content": assistant_reply})
-        st.rerun()
+        if len(prompt) > MAX_CHAT_MESSAGE_LENGTH:
+            st.error(f"Messages must not exceed {MAX_CHAT_MESSAGE_LENGTH:,} characters.")
+        else:
+            context_step = st.session_state.chat_context["step"]
+            append_chat_message("user", safe_history_content(prompt, context_step))
+            assistant_reply = generate_chat_response(prompt)
+            append_chat_message("assistant", assistant_reply)
+            st.rerun()
 
 
 if __name__ == "__main__":

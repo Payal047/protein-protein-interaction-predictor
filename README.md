@@ -124,6 +124,13 @@ The assistant and the prediction pipeline both reuse the same validation rules. 
 - numbers,
 - non-standard amino-acid symbols.
 
+## Security and deployment
+The prediction and feature-extraction paths accept ASCII standard amino-acid sequences up to 40,000 residues. Chat messages have the same maximum length, chat history is capped at 20 entries, guided sequences are redacted from that history, and unfinished chat prediction context expires after 10 minutes. Prediction requests are limited to five per Streamlit session in a rolling 60-second window.
+
+The saved model is loaded with `joblib`, which uses Python pickle serialization and can execute code while loading. Treat `models/logistic_regression_exp3.joblib` as trusted executable content. The application only loads that fixed artifact after checking its location and SHA-256 digest; never load user-uploaded or otherwise untrusted model files. An intentional model replacement requires reviewing the new artifact and updating the expected digest in `src/predict.py`.
+
+The application has no built-in authentication and is intended for local use. Before exposing it to other users, put it behind TLS and an authenticated proxy or platform access control, and add deployment-wide request limits: the built-in prediction limit is per Streamlit session and can be bypassed by creating new sessions. Keep Streamlit's security protections enabled. Store credentials outside source control; `.env` variants and common private-key files are ignored by Git, but ignore rules do not remove secrets already committed to repository history.
+
 ## Future scope
 Possible extensions include:
 - adding more biologically informed features,

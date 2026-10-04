@@ -14,6 +14,7 @@ PROCESSED_DIR = PROJECT_ROOT / "data" / "processed"
 
 # Keep the amino-acid order stable so feature columns are always predictable.
 STANDARD_AMINO_ACIDS = "ACDEFGHIKLMNPQRSTVWY"
+MAX_SEQUENCE_LENGTH = 40_000
 SPLITS = ("train", "validation", "test")
 CHUNK_SIZE = 5000
 AMINO_ACID_FEATURE_COUNT = 1 + 20 + 400
@@ -71,6 +72,15 @@ def get_pair_feature_columns() -> list[str]:
 
 def extract_protein_features(sequence: str) -> dict[str, float | int]:
     """Return sequence length, amino-acid proportions, and dipeptide proportions."""
+    if not isinstance(sequence, str):
+        raise ValueError("A protein sequence must be text.")
+    if len(sequence) > MAX_SEQUENCE_LENGTH:
+        raise ValueError(
+            f"A protein sequence must not exceed {MAX_SEQUENCE_LENGTH:,} residues."
+        )
+    if not sequence.isascii():
+        raise ValueError("A protein sequence contains unsupported characters.")
+
     # Normalize lowercase input so callers can pass sequences in either case.
     normalized_sequence = sequence.strip().upper()
     if not normalized_sequence:
@@ -80,8 +90,7 @@ def extract_protein_features(sequence: str) -> dict[str, float | int]:
     # producing misleading composition proportions.
     invalid_amino_acids = set(normalized_sequence) - set(STANDARD_AMINO_ACIDS)
     if invalid_amino_acids:
-        invalid_symbols = "".join(sorted(invalid_amino_acids))
-        raise ValueError(f"Sequence contains non-standard amino acids: {invalid_symbols}")
+        raise ValueError("A protein sequence contains unsupported characters.")
 
     # Count each amino acid once, then divide by sequence length to get its
     # frequency as a proportion. Standard amino acids absent from a sequence
@@ -163,14 +172,11 @@ def extract_protein_features(sequence: str) -> dict[str, float | int]:
         }
     except ValueError as error:
         raise ValueError(
-            f"Could not calculate physicochemical features for sequence "
-            f"({sequence_length} residues): {error}"
+            "Could not calculate features for this sequence. Check that it is "
+            "valid and long enough."
         ) from error
     except Exception as error:
-        raise ValueError(
-            f"Biopython could not calculate physicochemical features for a "
-            f"sequence of {sequence_length} residues: {error}"
-        ) from error
+        raise ValueError("Sequence feature extraction failed.") from error
 
     for feature_name in PHYSICOCHEMICAL_FEATURE_NAMES:
         value = float(physicochemical_features[feature_name])
