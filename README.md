@@ -1,140 +1,390 @@
 # Protein–Protein Interaction Prediction
 
-## Problem statement
-Protein–protein interactions (PPIs) are central to many biological processes. In this project, we use sequence-derived features and machine learning to predict whether a pair of proteins is likely to interact. This is a computational prediction task and should not be treated as biological proof.
+## Problem Statement
+
+Protein–protein interactions (PPIs) are central to many biological processes. This project uses protein sequence-derived features and machine learning to predict whether a pair of proteins is likely to interact.
+
+This is a computational prediction task and should not be treated as biological proof or a substitute for experimental validation.
 
 ## Objective
-The goal is to build a reproducible research project that:
-- loads protein sequence data and interaction pairs,
-- cleans and validates the data,
-- extracts sequence and physicochemical features,
-- trains and evaluates machine learning models,
-- predicts new interactions for protein pairs,
-- provides a simple Streamlit user interface.
+
+The goal is to build a reproducible machine learning research project that:
+
+* Loads protein sequence data and interaction pairs
+* Cleans and validates biological data
+* Extracts sequence and physicochemical features
+* Trains and evaluates machine learning models
+* Predicts interactions for new protein pairs
+* Provides a simple Streamlit web interface
+* Applies security hardening to the prediction application
+* Evaluates model performance using random and protein-disjoint testing
 
 ## Dataset
-The project uses the provided human protein FASTA data and the interaction pair files in the dataset folder.
 
-- FASTA file: 21591618/human_swissprot_oneliner.fasta
-- Processed feature files: data/processed/ppi_train_features_exp3.csv, ppi_validation_features_exp3.csv, ppi_test_features_exp3.csv
+The project uses human protein sequence data and protein interaction pair files.
 
-## Data preprocessing
+### Input Data
+
+* FASTA file: `21591618/human_swissprot_oneliner.fasta`
+* Positive interaction pairs:
+
+  * `Intra0_pos_rr.txt`
+  * `Intra1_pos_rr.txt`
+  * `Intra2_pos_rr.txt`
+* Negative interaction pairs:
+
+  * `Intra0_neg_rr.txt`
+  * `Intra1_neg_rr.txt`
+  * `Intra2_neg_rr.txt`
+
+### Processed Data
+
+Main processed dataset:
+
+`data/processed/ppi_train_features_exp3.csv`
+
+The dataset contains:
+
+* 163,177 protein-pair records
+* 873 columns
+* 870 numerical features
+* Protein A identifier
+* Protein B identifier
+* Interaction target
+
+Class distribution:
+
+* Positive interactions: 81,589
+* Negative interactions: 81,588
+
+## Data Preprocessing
+
 The preprocessing workflow:
-- loads the FASTA protein records,
-- maps protein IDs to their sequences,
-- validates the amino-acid alphabet,
-- removes missing or invalid sequence records,
-- ensures the train/validation/test splits are preserved without introducing leakage,
-- writes cleaned pair files for downstream feature extraction.
 
-## Feature extraction
-The feature extraction workflow builds fixed 870-dimensional pair features for each protein pair using:
-- sequence length,
-- amino-acid composition,
-- dipeptide composition,
-- physicochemical descriptors such as molecular weight, aromaticity, instability index, isoelectric point, and secondary structure fractions.
+1. Loads protein FASTA records.
+2. Maps protein IDs to amino-acid sequences.
+3. Validates amino-acid sequences.
+4. Removes missing or invalid sequence records.
+5. Creates positive and negative protein pairs.
+6. Extracts fixed-length numerical features.
+7. Separates protein identifiers from model features.
+8. Checks for duplicate records and protein pairs.
+9. Creates reproducible train/test splits.
 
-The model receives the same fixed feature order for every split.
+The processed dataset contains:
 
-## Machine learning models
-The saved Experiment 3 models in this project are:
-- Logistic Regression
-- Random Forest
+* **0 exact duplicate rows**
+* **0 duplicate protein pairs**
 
-These saved models are loaded for evaluation and prediction without retraining.
+## Feature Extraction
 
-## Evaluation metrics
-The project reports the following metrics:
-- Accuracy
-- Precision
-- Recall
-- F1-score
-- ROC-AUC
-- Confusion matrix
+The project creates fixed **870-dimensional pair features** for each protein pair.
 
-## Results
-The current saved Experiment 3 models produce the following results on the project validation and test sets.
+Features include:
 
-### Validation
-- Logistic Regression: Accuracy 0.5233, Precision 0.5280, Recall 0.4404, F1 0.4802, ROC-AUC 0.5358
-- Random Forest: Accuracy 0.5138, Precision 0.5381, Recall 0.1960, F1 0.2874, ROC-AUC 0.5334
+* Sequence length
+* Amino-acid composition
+* Dipeptide composition
+* Molecular weight
+* Aromaticity
+* Instability index
+* Isoelectric point
+* Secondary structure fractions
+* Other sequence-derived physicochemical descriptors
 
-### Test
-- Logistic Regression: Accuracy 0.5192, Precision 0.5237, Recall 0.4253, F1 0.4694, ROC-AUC 0.5320
-- Random Forest: Accuracy 0.5195, Precision 0.5509, Recall 0.2115, F1 0.3057, ROC-AUC 0.5429
+The same feature order is used during training and prediction.
 
-These values are computational results and should be interpreted as model performance estimates, not biological proof of interaction.
+## Machine Learning Models
 
-## How to run the project
-1. Create or activate the project virtual environment.
-2. Install dependencies from requirements.txt.
-3. Run the evaluation script:
-   python src/evaluate_experiment3.py
-4. Run the prediction script with two protein sequences:
-   python src/predict.py "MKT..." "GQY..."
-5. Start the web interface:
-   streamlit run app.py
+The project evaluates:
 
-## How to use the prediction system
-- Enter the amino-acid sequence for Protein A and Protein B.
-- The system validates the input using the standard amino-acid alphabet.
-- The same 870 features used during Experiment 3 are extracted.
-- A saved model predicts whether the pair is likely to interact.
-- The output is labeled as a computational prediction and requires further biological validation.
+* Logistic Regression
+* Random Forest
 
-## Limitations
-- This project is a sequence-based computational model, not an experimental assay.
-- Model performance depends on the training data and feature choices.
-- Predictions are not direct evidence of a biological interaction.
-- The model should be interpreted as a screening aid rather than a definitive biological answer.
+The deployed prediction application currently uses:
+
+`models/logistic_regression_exp3.joblib`
+
+Random Forest was also evaluated and produced stronger performance in the current evaluation.
+
+## Model Evaluation
+
+The project reports:
+
+* Accuracy
+* Precision
+* Recall
+* F1-score
+* ROC-AUC
+* Confusion matrix
+
+### Random 80/20 Evaluation
+
+A stratified random 80/20 split was used.
+
+| Model               |   Accuracy |  Precision |     Recall |   F1-score |    ROC-AUC |
+| ------------------- | ---------: | ---------: | ---------: | ---------: | ---------: |
+| Logistic Regression |     59.12% |     58.95% |     60.04% |     59.49% |     62.72% |
+| Random Forest       | **66.51%** | **66.26%** | **67.27%** | **66.76%** | **72.93%** |
+
+Training samples: **130,541**
+
+Testing samples: **32,636**
+
+### Protein-Disjoint Evaluation
+
+A separate protein-disjoint evaluation was performed to provide a stronger assessment of generalization.
+
+Random Forest results:
+
+| Metric           |     Result |
+| ---------------- | ---------: |
+| Training samples |    130,541 |
+| Testing samples  |     32,636 |
+| Accuracy         | **65.37%** |
+| F1-score         | **65.45%** |
+| ROC-AUC          | **71.80%** |
+
+The reproducible evaluation script is:
+
+`src/evaluate_protein_disjoint.py`
+
+Saved results:
+
+`reports/protein_disjoint_evaluation.csv`
+
+### Cross-Validation
+
+A 3-fold Random Forest cross-validation experiment produced:
+
+* Accuracy: **61.11%**
+* Precision: **61.60%**
+* Recall: **58.18%**
+* F1-score: **59.84%**
+* ROC-AUC: **65.53%**
+
+These results demonstrate that performance varies depending on the evaluation strategy.
+
+## Important Evaluation Limitation
+
+The random 80/20 split contains substantial protein overlap between training and testing:
+
+* Unique training proteins: 4,267
+* Unique testing proteins: 3,941
+* Proteins appearing in both: 3,923
+
+Therefore, the random split should not be interpreted as a completely unseen-protein evaluation.
+
+The protein-disjoint evaluation provides a stronger generalization check.
+
+## Prediction System
+
+The prediction system accepts two protein sequences and returns:
+
+* Predicted interaction: `YES` or `NO`
+* Interaction probability
+* Biological validation warning
+
+Example:
+
+```text
+Predicted interaction: NO
+Probability: 20.31%
+
+This is a computational prediction and requires biological validation.
+```
+
+The system should be used as a computational screening and educational tool, not as experimental evidence.
+
+## How to Run
+
+### Activate the virtual environment
+
+```powershell
+.\venv\Scripts\Activate.ps1
+```
+
+### Install dependencies
+
+```powershell
+pip install -r requirements.txt
+```
+
+### Run model evaluation
+
+```powershell
+python src/evaluate_model.py
+```
+
+### Run protein-disjoint evaluation
+
+```powershell
+python src/evaluate_protein_disjoint.py
+```
+
+### Run prediction
+
+```powershell
+python src/predict.py "MKT..." "GQY..."
+```
+
+### Start Streamlit
+
+```powershell
+streamlit run app.py
+```
+
+## How to Use the Prediction System
+
+1. Enter the amino-acid sequence for Protein A.
+2. Enter the amino-acid sequence for Protein B.
+3. The system validates both sequences.
+4. The 870 features are extracted.
+5. The saved model generates a prediction.
+6. The application displays the prediction and probability.
+7. The result is clearly labeled as a computational prediction.
 
 ## Interactive PPI Research Assistant
+
 The application includes a simple rule-based research assistant that helps users with:
-- general PPI questions,
-- project workflow questions,
-- dataset and feature discussion,
-- sequence validation guidance,
-- machine learning concepts such as Logistic Regression, Random Forest, accuracy, precision, recall, F1-score, and ROC-AUC,
-- guided prediction of a new protein pair.
 
-The chatbot is intended for educational demonstration. It does not replace biological validation or experimental testing.
+* General PPI questions
+* Project workflow questions
+* Dataset and feature discussions
+* Sequence validation guidance
+* Machine learning concepts
+* Accuracy, precision, recall, F1-score and ROC-AUC
+* Guided protein-pair prediction
 
-### Supported questions
+The chatbot is intended for educational demonstration and does not replace biological validation.
+
+### Supported Questions
+
 Examples include:
-- What is PPI?
-- How does this project work?
-- What is FASTA?
-- What are the 870 features?
-- What is ROC-AUC?
-- Can a YES prediction prove biological interaction?
-- Can this system diagnose disease or recommend antibiotics?
 
-### Prediction conversation flow
-The assistant can guide a user through the prediction flow:
-1. Provide Protein A sequence.
-2. Provide Protein B sequence.
-3. Confirm that the user wants to run the computational prediction.
-4. The app reuses the existing saved Experiment 3 model and prediction logic.
-5. The result is reported as a computational prediction with a warning that experimental validation is required.
+* What is PPI?
+* How does this project work?
+* What is FASTA?
+* What are the 870 features?
+* What is ROC-AUC?
+* Can a YES prediction prove biological interaction?
+* Can this system diagnose disease?
+* Can this system recommend antibiotics?
 
-### Sequence validation
-The assistant and the prediction pipeline both reuse the same validation rules. Invalid sequences are rejected with errors such as:
-- empty inputs,
-- unsupported characters,
-- numbers,
-- non-standard amino-acid symbols.
+## Sequence Validation
 
-## Security and deployment
-The prediction and feature-extraction paths accept ASCII standard amino-acid sequences up to 40,000 residues. Chat messages have the same maximum length, chat history is capped at 20 entries, guided sequences are redacted from that history, and unfinished chat prediction context expires after 10 minutes. Prediction requests are limited to five per Streamlit session in a rolling 60-second window.
+The prediction pipeline validates protein sequences using the standard amino-acid alphabet.
 
-The saved model is loaded with `joblib`, which uses Python pickle serialization and can execute code while loading. Treat `models/logistic_regression_exp3.joblib` as trusted executable content. The application only loads that fixed artifact after checking its location and SHA-256 digest; never load user-uploaded or otherwise untrusted model files. An intentional model replacement requires reviewing the new artifact and updating the expected digest in `src/predict.py`.
+Invalid inputs such as empty sequences, unsupported characters, numbers and invalid symbols are rejected.
 
-The application has no built-in authentication and is intended for local use. Before exposing it to other users, put it behind TLS and an authenticated proxy or platform access control, and add deployment-wide request limits: the built-in prediction limit is per Streamlit session and can be bypassed by creating new sessions. Keep Streamlit's security protections enabled. Store credentials outside source control; `.env` variants and common private-key files are ignored by Git, but ignore rules do not remove secrets already committed to repository history.
+## Security Hardening
 
-## Future scope
+The application was reviewed and hardened against common application-level risks.
+
+Security measures include:
+
+* Input length limits
+* Protein sequence validation
+* Safe invalid-input handling
+* Chat history limited to 20 messages
+* Guided sequences redacted from chat history
+* Prediction context expiration after 10 minutes
+* Prediction rate limiting of five predictions per Streamlit session within 60 seconds
+* Trusted model-path enforcement
+* Fixed expected model artifact
+* SHA-256 model integrity verification
+* Model interface and feature-count validation
+* Generic user-facing error handling
+* No user-controlled model-file loading
+* No SQL interface
+* No shell/subprocess execution
+* No arbitrary filesystem path input
+* No file-upload attack surface in the prediction workflow
+
+### Security Testing
+
+The project was checked using:
+
+* Bandit static security analysis
+* pip-audit dependency vulnerability scanning
+* Local secret scanning
+* Git history secret scanning
+* Python syntax validation
+* Adversarial chatbot testing
+
+Bandit reported **zero security issues**.
+
+`pip-audit` reported **no known vulnerabilities** in the declared dependencies.
+
+After remediation, the project received a **95/100 heuristic security score**. This is an internal security assessment and is not a formal security certification.
+
+### Deployment Security
+
+The application does not include built-in authentication and is intended for local use.
+
+Before public deployment, additional controls should include:
+
+* HTTPS/TLS
+* Authentication or access control where required
+* Deployment-wide rate limiting
+* Secure credential management
+* Monitoring and logging
+
+The session-based prediction limit should not be considered a replacement for infrastructure-level rate limiting.
+
+The saved `.joblib` model uses Python pickle-based serialization through `joblib`. Only the trusted fixed model artifact should be loaded.
+
+## Limitations
+
+* This is a sequence-based computational model.
+* Predictions are not experimental evidence.
+* Performance depends on the dataset and selected features.
+* Random splits can contain substantial protein overlap.
+* Protein-disjoint evaluation provides a stronger generalization check but is still not laboratory validation.
+* The model does not diagnose diseases.
+* The model does not determine whether a drug or antibiotic should be prescribed.
+* Biological conclusions require independent experimental or validated database evidence.
+
+## Future Scope
+
 Possible extensions include:
-- adding more biologically informed features,
-- investigating alternative models and ensemble methods,
-- validating against external benchmark datasets,
-- improving explainability for individual predictions,
-- connecting predictions to experimental validation pipelines.
+
+* External benchmark validation
+* Protein-disjoint and family-level benchmark datasets
+* More biologically informed features
+* Deep learning models
+* Protein language model embeddings
+* Graph-based protein interaction models
+* Ensemble methods
+* Explainable AI
+* Confidence calibration
+* Integration with experimentally validated PPI databases
+* Experimental validation pipelines
+
+## Research Reproducibility
+
+Important evaluation scripts and results are stored in the repository.
+
+```text
+src/
+├── feature_extraction.py
+├── predict.py
+├── evaluate_model.py
+└── evaluate_protein_disjoint.py
+
+models/
+└── logistic_regression_exp3.joblib
+
+reports/
+├── model_evaluation_80_20.csv
+├── protein_disjoint_evaluation.csv
+└── confusion_matrices.png
+```
+
+The project is designed so that model evaluation and prediction can be reproduced from the saved scripts, model artifact, data-processing pipeline and dependency specification.
+
+## Disclaimer
+
+This project is intended for **research, educational, and computational screening purposes only**.
+
+A predicted protein interaction is not proof that two proteins physically interact in a biological system. Experimental or independently validated biological evidence is required before drawing scientific or medical conclusions.

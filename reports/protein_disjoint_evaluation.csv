@@ -1,0 +1,2 @@
+evaluation,training_samples,testing_samples,accuracy,f1_score,roc_auc,random_state
+Protein-disjoint evaluation,130541,32636,0.6537259468072067,0.6544987618086765,0.7179559213272986,42
