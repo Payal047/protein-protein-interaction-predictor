@@ -21,7 +21,7 @@ from src.feature_extraction import (
 MODELS_DIR = PROJECT_ROOT / "models"
 MODEL_FILENAME = "logistic_regression_exp3.joblib"
 MODEL_PATH = MODELS_DIR / MODEL_FILENAME
-EXPECTED_MODEL_SHA256 = "7c8f1cbe26f5b5a23c27f842dfc4593e8c242be8953b5c0e72be9cf8a268e22b"
+EXPECTED_MODEL_SHA256 = "7150c7f73b38602261321d80ffb8a6b0431c955e6ab0a1c5fefdba028f69050c"
 _MODEL_LOCK = Lock()
 _CACHED_MODEL = None
 
@@ -80,6 +80,8 @@ def load_trusted_model():
             get_pair_feature_columns()
         ):
             raise RuntimeError("The trusted model artifact has an invalid feature schema.")
+        if list(getattr(loaded_model, "feature_names_in_", [])) != get_pair_feature_columns():
+            raise RuntimeError("The trusted model artifact has an invalid feature schema.")
 
         _CACHED_MODEL = loaded_model
         return _CACHED_MODEL
@@ -92,11 +94,16 @@ def predict_interaction(sequence_a: str, sequence_b: str):
 
     feature_columns = get_pair_feature_columns()
     features = extract_pair_features(cleaned_a, cleaned_b)
-    feature_vector = pd.DataFrame([features], columns=feature_columns)
+    feature_vector = pd.DataFrame(
+        [features], columns=feature_columns, dtype="float32"
+    )
 
     model = load_trusted_model()
-    prediction = int(model.predict(feature_vector)[0])
-    prediction_probability = float(model.predict_proba(feature_vector)[0, list(model.classes_).index(1)])
+    positive_class_index = list(model.classes_).index(1)
+    prediction_probability = float(
+        model.predict_proba(feature_vector)[0, positive_class_index]
+    )
+    prediction = int(prediction_probability >= 0.5)
 
     return prediction, prediction_probability
 

@@ -21,6 +21,13 @@ from sklearn.model_selection import train_test_split
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
 
+from src.feature_extraction import (
+    EXPECTED_PAIR_FEATURE_COUNT,
+    get_ordered_pair_feature_columns,
+    get_pair_feature_columns,
+    symmetrize_pair_feature_frame,
+)
+
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 PROCESSED_DIR = PROJECT_ROOT / "data" / "processed"
@@ -58,14 +65,14 @@ def load_dataset() -> tuple[Path, pd.DataFrame, pd.Series]:
         for column in columns
         if column != TARGET_COLUMN and column not in ID_COLUMNS
     ]
-    if not feature_columns:
+    if len(feature_columns) != EXPECTED_PAIR_FEATURE_COUNT:
         raise ValueError(f"No feature columns were found in {dataset_path}.")
 
     # Load only model inputs and labels, directly as float32 to limit memory use.
     dataset = pd.read_csv(
         dataset_path,
         usecols=feature_columns + [TARGET_COLUMN],
-        dtype={column: np.float32 for column in feature_columns},
+        dtype={column: np.float64 for column in feature_columns},
     )
     if dataset.empty:
         raise ValueError(f"The dataset contains no rows: {dataset_path}")
@@ -78,15 +85,22 @@ def load_dataset() -> tuple[Path, pd.DataFrame, pd.Series]:
             f"'{TARGET_COLUMN}' must contain both binary labels 0 and 1; "
             f"found {sorted(labels.dropna().unique().tolist())}."
         )
+    if feature_columns == get_ordered_pair_feature_columns():
+        dataset = symmetrize_pair_feature_frame(dataset)
+    elif feature_columns != get_pair_feature_columns():
+        raise ValueError(f"Unexpected feature names or order in {dataset_path}.")
+    else:
+        dataset = dataset.astype(np.float32)
+
     return dataset_path, dataset, labels.astype(np.int8)
 
 
 def evaluate_model(model, training_features, testing_features, training_labels, testing_labels):
     """Fit a classifier and return test metrics and its confusion matrix."""
     model.fit(training_features, training_labels)
-    predictions = model.predict(testing_features)
     positive_class_index = list(model.classes_).index(1)
     positive_probabilities = model.predict_proba(testing_features)[:, positive_class_index]
+    predictions = (positive_probabilities >= 0.5).astype(int)
     metrics = {
         "Accuracy": accuracy_score(testing_labels, predictions),
         "Precision": precision_score(testing_labels, predictions, zero_division=0),

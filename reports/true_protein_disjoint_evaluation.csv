@@ -1,0 +1,14 @@
+metric,value
+report_status,Legacy metrics preserved; original model and protocol metadata were not recorded.
+model_used,Unknown; this legacy report cannot be attributed to Logistic Regression or Random Forest.
+evaluation_protocol,"Legacy protocol provenance was not recorded. Current evaluator: NumPy RandomState(42) shuffles unique protein IDs; first 80% train and remainder test; retain pairs only when both endpoints are in the same partition; exclude cross-partition pairs; fit on retained train pairs and evaluate retained test pairs."
+training_rows,106269.0
+testing_rows,6108.0
+training_proteins,3399.0
+testing_proteins,786.0
+protein_overlap,0.0
+accuracy,0.5144073346430911
+precision,0.5561403508771929
+recall,0.10462046204620462
+f1_score,0.1761111111111111
+roc_auc,0.5241191078172145

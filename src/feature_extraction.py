@@ -64,10 +64,55 @@ def get_pair_feature_columns() -> list[str]:
     protein_feature_names.extend(PHYSICOCHEMICAL_FEATURE_NAMES)
 
     return [
+        f"pair_mean_{feature_name}"
+        for feature_name in protein_feature_names
+    ] + [
+        f"pair_abs_difference_{feature_name}"
+        for feature_name in protein_feature_names
+    ]
+
+
+def get_ordered_pair_feature_columns() -> list[str]:
+    """Build the legacy side-specific feature names in extraction order."""
+    protein_feature_names = ["length"]
+    protein_feature_names.extend(
+        f"frequency_{amino_acid}" for amino_acid in STANDARD_AMINO_ACIDS
+    )
+    protein_feature_names.extend(
+        f"frequency_dipeptide_{first}{second}"
+        for first in STANDARD_AMINO_ACIDS
+        for second in STANDARD_AMINO_ACIDS
+    )
+    protein_feature_names.extend(PHYSICOCHEMICAL_FEATURE_NAMES)
+
+    return [
         f"protein_{protein_side}_{feature_name}"
         for protein_side in ("a", "b")
         for feature_name in protein_feature_names
     ]
+
+
+def symmetrize_pair_feature_frame(features: pd.DataFrame) -> pd.DataFrame:
+    """Convert legacy side-specific features to an order-invariant schema."""
+    ordered_columns = get_ordered_pair_feature_columns()
+    if features.columns.tolist() != ordered_columns:
+        raise ValueError(
+            "Expected the complete side-specific pair feature schema in its "
+            "original order."
+        )
+
+    values = features.to_numpy(dtype=np.float64, copy=False)
+    protein_feature_count = EXPECTED_PROTEIN_FEATURE_COUNT
+    protein_a = values[:, :protein_feature_count]
+    protein_b = values[:, protein_feature_count:]
+    symmetric_values = np.concatenate(
+        ((protein_a + protein_b) / 2, np.abs(protein_a - protein_b)), axis=1
+    ).astype(np.float32)
+    return pd.DataFrame(
+        symmetric_values,
+        columns=get_pair_feature_columns(),
+        index=features.index,
+    )
 
 
 def extract_protein_features(sequence: str) -> dict[str, float | int]:
@@ -195,15 +240,17 @@ def extract_pair_features(sequence_a: str, sequence_b: str) -> dict[str, float |
     features_a = extract_protein_features(sequence_a)
     features_b = extract_protein_features(sequence_b)
 
-    # Prefix each feature with its protein side to keep both sequences distinct.
+    # A PPI pair is undirected, so retain pair-level values but discard side order.
     pair_features = {
-        f"protein_a_{feature_name}": value
-        for feature_name, value in features_a.items()
+        f"pair_mean_{feature_name}": (features_a[feature_name] + features_b[feature_name]) / 2
+        for feature_name in features_a
     }
     pair_features.update(
         {
-            f"protein_b_{feature_name}": value
-            for feature_name, value in features_b.items()
+            f"pair_abs_difference_{feature_name}": abs(
+                features_a[feature_name] - features_b[feature_name]
+            )
+            for feature_name in features_a
         }
     )
     return pair_features
@@ -271,7 +318,8 @@ def extract_dataset_features(input_path: Path, output_path: Path) -> None:
             for column in pair_feature_columns
         ):
             raise AssertionError(
-                f"Chunk {chunk_number}: one or more of the 842 feature columns "
+                f"Chunk {chunk_number}: one or more of the "
+                f"{EXPECTED_PAIR_FEATURE_COUNT} feature columns "
                 "are not numeric; the chunk was not written."
             )
 

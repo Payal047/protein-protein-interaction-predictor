@@ -105,7 +105,7 @@ The deployed prediction application currently uses:
 
 `models/logistic_regression_exp3.joblib`
 
-Random Forest was also evaluated and produced stronger performance in the current evaluation.
+The selected model is the symmetric Exp3 Logistic Regression. It uses 870 order-invariant pair features: `pair_mean_*` and `pair_abs_difference_*`. These summarize each protein's sequence features as the pairwise mean and absolute difference, so swapping protein A and B does not change the representation.
 
 ## Model Evaluation
 
@@ -120,7 +120,7 @@ The project reports:
 
 ### Random 80/20 Evaluation
 
-A stratified random 80/20 split was used.
+**Historical random 80/20 row split.** These archived metrics are from `reports/model_evaluation_80_20.csv`, which randomly split rows from the training feature data. There are 3,923 shared proteins between its train and test subsets, so this is not pair- or protein-disjoint evaluation and is not an unseen-protein estimate. The archived metrics predate consistent use of the deployed probability threshold.
 
 | Model               |   Accuracy |  Precision |     Recall |   F1-score |    ROC-AUC |
 | ------------------- | ---------: | ---------: | ---------: | ---------: | ---------: |
@@ -131,31 +131,34 @@ Training samples: **130,541**
 
 Testing samples: **32,636**
 
-### Protein-Disjoint Evaluation
+### Current Supplied Protein-Disjoint Holdout (51,909 Rows)
 
-A separate protein-disjoint evaluation was performed to provide a stronger assessment of generalization.
+The supplied train, validation, and test partitions have no repeated undirected protein pairs and no shared protein IDs across splits. The 51,909-row test set is therefore both pair-disjoint and protein-disjoint from training.
 
-Random Forest results:
+The following Logistic Regression artifacts were evaluated on the **same 51,909 test pairs in the same order, with identical labels**, using positive probability `>= 0.5` for classification:
 
-| Metric           |     Result |
-| ---------------- | ---------: |
-| Training samples |    130,541 |
-| Testing samples  |     32,636 |
-| Accuracy         | **65.37%** |
-| F1-score         | **65.45%** |
-| ROC-AUC          | **71.80%** |
+| Logistic Regression artifact | Feature representation | Accuracy | Precision | Recall | F1 | ROC-AUC |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| Current symmetric Exp3 | 870 order-invariant `pair_mean_*` and `pair_abs_difference_*` features | 56.63% | 57.58% | 50.37% | 53.74% | 59.76% |
+| Older Logistic Regression | 842 legacy side-specific features | 51.92% | 52.38% | 42.45% | 46.89% | 53.15% |
 
-The reproducible evaluation script is:
+The older artifact is the available legacy `models/logistic_regression.joblib`; it is not a separate prior symmetric Exp3 artifact. Because no previous symmetric Exp3 artifact is available, this comparison does **not** establish that symmetrization alone caused the performance difference. It compares the two available models and feature representations under the same test pairs and labels.
 
-`src/evaluate_protein_disjoint.py`
+### Deterministic True Protein-Disjoint Evaluation
 
-Saved results:
+The current evaluator partitions unique protein IDs using a NumPy array shuffled with `RandomState(42)`, assigns 80% of IDs to training and 20% to testing, retains only pairs whose endpoints are both in the same partition, and excludes cross-partition pairs. It fits **both Logistic Regression** (StandardScaler plus `LogisticRegression(max_iter=1000, random_state=42)`) **and Random Forest** (`n_estimators=200`, `random_state=42`) using the retained training pairs, then evaluates each on the retained test pairs with positive probability `>= 0.5`. The output is `reports/true_protein_disjoint_model_comparison.csv`.
 
-`reports/protein_disjoint_evaluation.csv`
+The legacy 6,108-row deterministic evaluation recorded an in-memory Logistic Regression result: 106,269 training pairs, 6,108 test pairs, 3,399 training proteins, 786 test proteins, zero protein overlap, and 50,800 excluded cross-partition pairs. Its historical metrics were 52.23% accuracy, 51.85% precision, 51.68% recall, 51.77% F1, and 53.04% ROC-AUC (confusion matrix `[[1624,1454],[1464,1566]]`). These results are weak unseen-protein performance and are not a substitute for the current two-model report.
 
-### Cross-Validation
+### Legacy Unattributed True-Disjoint Report
 
-A 3-fold Random Forest cross-validation experiment produced:
+`reports/true_protein_disjoint_evaluation.csv` is preserved legacy data with metrics of 51.44% accuracy, 55.61% precision, 10.46% recall, 17.61% F1, and 52.41% ROC-AUC. Its estimator and evaluation-protocol provenance are unknown. These metrics must not be attributed to Logistic Regression or Random Forest or assumed to use the deterministic protocol above. The current evaluator writes to the separate `reports/true_protein_disjoint_model_comparison.csv` and does not overwrite this legacy report.
+
+The separate `reports/protein_disjoint_evaluation.csv` is a historical random-row split with 130,541 training rows, 32,636 test rows, and 3,923 shared proteins. It is not protein-disjoint and is labeled accordingly.
+
+### Historical Cross-Validation
+
+The README's archived 3-fold Random Forest figures were not independently reproduced: no corresponding cross-validation script or saved fold results were found in the workspace. Treat these values as unverified historical results:
 
 * Accuracy: **61.11%**
 * Precision: **61.60%**
@@ -175,7 +178,7 @@ The random 80/20 split contains substantial protein overlap between training and
 
 Therefore, the random split should not be interpreted as a completely unseen-protein evaluation.
 
-The protein-disjoint evaluation provides a stronger generalization check.
+The random row, supplied pair-/protein-disjoint holdout, and legacy deterministic true protein-disjoint evaluation are distinct protocols. Do not use random-row results as an unseen-protein claim or treat the unattributed legacy report as model-specific evidence.
 
 ## Prediction System
 
@@ -188,8 +191,8 @@ The prediction system accepts two protein sequences and returns:
 Example:
 
 ```text
-Predicted interaction: NO
-Probability: 20.31%
+Predicted interaction: YES or NO
+Probability: <model-generated probability>
 
 This is a computational prediction and requires biological validation.
 ```
@@ -212,14 +215,26 @@ pip install -r requirements.txt
 
 ### Run model evaluation
 
+This runs the historical random-row comparison and fits both candidate models; it is not an inference-only evaluation.
+
 ```powershell
-python src/evaluate_model.py
+python -m src.evaluate_model
+```
+
+### Evaluate saved Experiment 3 models
+
+This evaluates the existing Logistic Regression and Random Forest artifacts without fitting them.
+
+```powershell
+python -m src.evaluate_experiment3
 ```
 
 ### Run protein-disjoint evaluation
 
+This fits both Logistic Regression and Random Forest on the deterministic true protein-disjoint training subset and writes `reports/true_protein_disjoint_model_comparison.csv`. It does not overwrite the legacy `reports/true_protein_disjoint_evaluation.csv`.
+
 ```powershell
-python src/evaluate_protein_disjoint.py
+python -m src.evaluate_protein_disjoint
 ```
 
 ### Run prediction
@@ -370,7 +385,8 @@ src/
 ├── feature_extraction.py
 ├── predict.py
 ├── evaluate_model.py
-└── evaluate_protein_disjoint.py
+├── evaluate_protein_disjoint.py
+└── evaluate_true_protein_disjoint.py
 
 models/
 └── logistic_regression_exp3.joblib
@@ -378,6 +394,8 @@ models/
 reports/
 ├── model_evaluation_80_20.csv
 ├── protein_disjoint_evaluation.csv
+├── true_protein_disjoint_evaluation.csv
+├── true_protein_disjoint_model_comparison.csv
 └── confusion_matrices.png
 ```
 
