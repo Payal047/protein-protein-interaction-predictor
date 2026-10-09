@@ -25,8 +25,9 @@ WELCOME_MESSAGE = {
 
 
 st.set_page_config(
-    page_title="PPI Predictor",
+    page_title="Protein AI Lab",
     page_icon="🧬",
+    layout="wide"
 )
 
 
@@ -444,164 +445,24 @@ def generate_chat_response(message: str) -> str:
 
 
 def main() -> None:
-    """Render the main PPI prediction and research assistant interface."""
+    """Render the redesigned PPI dashboard using the existing secure logic."""
 
-    initialize_chat_state()
+    from app_ui import render_dashboard
 
-    st.title("Protein–Protein Interaction Predictor")
-
-    st.caption(
-        "Computational prediction only — biological validation is still required."
+    render_dashboard(
+        initialize_chat_state=initialize_chat_state,
+        reset_chat_context=reset_chat_context,
+        append_chat_message=append_chat_message,
+        safe_history_content=safe_history_content,
+        generate_chat_response=generate_chat_response,
+        validate_sequence=validate_sequence,
+        allow_prediction=allow_prediction,
+        predict_interaction=predict_interaction,
+        clear_prediction_inputs=clear_prediction_inputs,
+        LOGGER=LOGGER,
+        WELCOME_MESSAGE=WELCOME_MESSAGE,
+        MAX_CHAT_MESSAGE_LENGTH=MAX_CHAT_MESSAGE_LENGTH,
     )
-
-    st.markdown("### PPI Prediction System")
-
-    if st.session_state.pop("clear_prediction_inputs", False):
-        st.session_state["protein_a_input"] = ""
-        st.session_state["protein_b_input"] = ""
-
-    protein_a = st.text_input(
-        "Protein A sequence",
-        placeholder="e.g. MKT...",
-        max_chars=MAX_SEQUENCE_LENGTH,
-        key="protein_a_input",
-    )
-
-    protein_b = st.text_input(
-        "Protein B sequence",
-        placeholder="e.g. GQY...",
-        max_chars=MAX_SEQUENCE_LENGTH,
-        key="protein_b_input",
-    )
-
-    if st.button("Predict interaction"):
-        st.session_state.pop("last_prediction", None)
-
-        try:
-            clean_a = validate_sequence(
-                protein_a,
-                "Protein A",
-            )
-
-            clean_b = validate_sequence(
-                protein_b,
-                "Protein B",
-            )
-
-            if not allow_prediction():
-                st.error(
-                    "Prediction limit reached. Please wait before trying again."
-                )
-
-            else:
-                prediction, probability = predict_interaction(
-                    clean_a,
-                    clean_b,
-                )
-
-                st.session_state.last_prediction = (
-                    "YES" if prediction == 1 else "NO",
-                    probability,
-                    clean_a,
-                    clean_b,
-                )
-
-                st.session_state.clear_prediction_inputs = True
-                st.rerun()
-
-        except ValueError as error:
-            st.error(f"Input error: {error}")
-
-        except Exception:
-            LOGGER.error("Form prediction failed.")
-            st.error(
-                "Prediction could not be completed. Please try again later."
-            )
-
-    if "last_prediction" in st.session_state:
-        label, probability, predicted_protein_a, predicted_protein_b = (
-            st.session_state.last_prediction
-        )
-
-        st.subheader("Prediction result")
-
-        st.write("**Protein A**")
-        st.code(predicted_protein_a)
-
-        st.write("**Protein B**")
-        st.code(predicted_protein_b)
-
-        st.metric(
-            "Predicted interaction",
-            label,
-        )
-
-        st.metric(
-            "Probability",
-            f"{probability * 100:.2f}%",
-        )
-
-        st.warning(
-            "This result is a computational prediction and does not prove "
-            "a biological interaction."
-        )
-
-    st.button(
-        "Clear sequence inputs",
-        on_click=clear_prediction_inputs,
-    )
-
-    st.markdown("---")
-
-    st.markdown("### PPI Research Assistant")
-
-    st.caption(
-        "Ask questions about protein-protein interactions, this project, "
-        "machine learning methods, or use the assistant to guide a "
-        "PPI prediction."
-    )
-
-    if st.button("Clear chat history"):
-        reset_chat_context()
-        st.session_state.messages = [WELCOME_MESSAGE.copy()]
-        st.rerun()
-
-    for message in st.session_state.messages:
-        with st.chat_message(message["role"]):
-            st.markdown(message["content"])
-
-    prompt = st.chat_input(
-        "Type your question or provide a protein sequence...",
-        max_chars=MAX_CHAT_MESSAGE_LENGTH,
-    )
-
-    if prompt:
-        if len(prompt) > MAX_CHAT_MESSAGE_LENGTH:
-            st.error(
-                f"Messages must not exceed "
-                f"{MAX_CHAT_MESSAGE_LENGTH:,} characters."
-            )
-
-        else:
-            context_step = st.session_state.chat_context["step"]
-
-            append_chat_message(
-                "user",
-                safe_history_content(
-                    prompt,
-                    context_step,
-                ),
-            )
-
-            assistant_reply = generate_chat_response(prompt)
-
-            append_chat_message(
-                "assistant",
-                assistant_reply,
-            )
-
-            st.rerun()
-
 
 if __name__ == "__main__":
     main()
